@@ -104,6 +104,8 @@ Classes
     Alias for the HandInteractionDetector class with args preset for Hands23.
 :class:`DepthAnythingV3`
     Alias for the DepthEstimator class with args preset for Depth-Anything-V3.
+:class:`DepthPro2`
+    Alias for the DepthEstimator class with args preset for Depth Pro 2 (metric depth).
 :class:`PPOCRDetector`
     Alias for the TextDetector class with args preset for PaddleOCR (PP-OCR) detection.
 :class:`PPOCRRecognizer`
@@ -172,6 +174,7 @@ from .depth_estimators import (
     DepthAnythingV2,
     DepthAnythingV2Metric,
     DepthAnythingV3,
+    DepthPro2,
 )
 from .detectors import (
     DEIM,
@@ -221,6 +224,7 @@ __all__ = [
     "DepthAnythingV2",
     "DepthAnythingV2Metric",
     "DepthAnythingV3",
+    "DepthPro2",
     "EfficientNet",
     "EfficientNetV2",
     "GoogLeNet",

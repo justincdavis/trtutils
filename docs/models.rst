@@ -99,6 +99,24 @@ Depth Estimation
      ``metric_depth = focal * output / 300`` with ``focal`` in pixels. Pass
      ``normalize=False`` to ``DepthAnythingV3`` to get the raw output for that.
 
+4. **Depth Pro 2**
+
+   - GitHub: `apple-aiml-research/ml-depth-pro-2 <https://github.com/apple-aiml-research/ml-depth-pro-2>`_
+   - ``DepthPro2``, sizes ``small``, ``base``, ``large`` and ``huge`` (upstream's S, B, L
+     and H+), single images only: the video mode's cross-frame attention is not exported.
+   - The engine outputs ``depth``, metric depth in metres along the optical axis, and
+     ``focal_length``, the focal length in pixels of the engine input that upstream's
+     field-of-view estimator predicts inside the graph (depth is
+     ``focal_length / (width * inverse_depth)``). The wrapper returns the metres as is
+     (``normalize=False``). As upstream, depth is infinite where the inverse depth is zero,
+     e.g. the sky. The focal length is the second output of each image from ``run``:
+     ``model.run(image)[1]`` (``model.run(images)[i][1]`` for a list). A known focal
+     length (camera intrinsics) cannot be passed in yet.
+   - Upstream runs at the image's own resolution; any ``(height, width)`` divisible by 32
+     exports, the default is ``(576, 1024)``. The image is resized without padding, so pick
+     the camera's aspect ratio: a squashed image also changes the estimated focal length.
+   - The weights are for non-commercial research use only, see the license table.
+
 Relative-depth models return each depth map min-max normalized to [0, 1]
 (``DepthEstimator(normalize=True)``, the default). Upstream resizes with a bicubic filter
 that keeps the aspect ratio; trtutils resizes linearly to the square engine input, so
@@ -245,6 +263,7 @@ Depth Estimation Models
 - **Depth-Anything-V2**: ``depth_anything_v2_small``, ``depth_anything_v2_base``, ``depth_anything_v2_large``
 - **Depth-Anything-V2 metric**: ``depth_anything_v2_metric_indoor_small``, ``depth_anything_v2_metric_indoor_base``, ``depth_anything_v2_metric_indoor_large``, ``depth_anything_v2_metric_outdoor_small``, ``depth_anything_v2_metric_outdoor_base``, ``depth_anything_v2_metric_outdoor_large``
 - **Depth-Anything-V3**: ``depth_anything_v3_small``, ``depth_anything_v3_base``, ``depth_anything_v3_large``, ``depth_anything_v3_mono_large``, ``depth_anything_v3_metric_large``
+- **Depth Pro 2**: ``depth_pro_2_small``, ``depth_pro_2_base``, ``depth_pro_2_large``, ``depth_pro_2_huge``
 
 Hand-Object Interaction Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -329,6 +348,11 @@ for the weights: check the source before using them.
    * - Depth-Anything-V3
      - ``small``, ``base``, ``mono_large``, ``metric_large``: Apache-2.0; ``large``:
        CC-BY-NC-4.0 (upstream's README; the ``DA3-LARGE-1.1`` model card says Apache-2.0)
+   * - Depth Pro 2
+     - Apple Machine Learning Research Model License: weights for "Research Purposes" only,
+       defined as "non-commercial scientific research and academic development activities"
+       (no commercial use or product development). Upstream's code is under a separate,
+       permissive Apple license
    * - HOI-DETR
      - MIT
    * - Hands23

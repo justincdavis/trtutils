@@ -42,6 +42,7 @@ ROUTING_CASES = [
     ),
     pytest.param("depth_anything_v3_mono_large", "depth_anything_v3", id="depth_anything_v3"),
     pytest.param("depth_anything_v3_small", "depth_anything_v3", id="depth_anything_v3_small"),
+    pytest.param("depth_pro_2_small", "depth_pro_2", id="depth_pro_2"),
     pytest.param("hoi_detr_vitl", "hoi_detr", id="hoi_detr"),
     pytest.param("hands23_x101", "hands23", id="hands23"),
     pytest.param("ppocrv4_det", "ppocr", id="ppocr_det"),

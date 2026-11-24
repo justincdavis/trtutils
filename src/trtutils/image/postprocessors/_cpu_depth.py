@@ -26,6 +26,8 @@ def postprocess_depth(
     normalize : bool
         Whether to min-max normalize each depth map to [0, 1]. If False, the
         depth maps keep the network's values (e.g. metres for a metric model).
+        Only the first output is the depth map: further outputs, such as the
+        focal length of the Depth Pro models, always keep their values.
         Default is True.
     no_copy : bool, optional
         Kept for interface symmetry with the other postprocessors. The depth maps are
@@ -36,9 +38,9 @@ def postprocess_depth(
     Returns
     -------
     list[list[np.ndarray]]
-        The postprocessed depth maps per image.
-        Each image has a single depth map of shape (1, H, W) as float32,
-        with values normalized to [0, 1] when ``normalize`` is True.
+        The postprocessed outputs per image, as float32: first the depth map of
+        shape (1, H, W), with values normalized to [0, 1] when ``normalize`` is
+        True, then any further outputs, e.g. the focal length (1, 1) in pixels.
 
     """
     if verbose:
@@ -50,11 +52,10 @@ def postprocess_depth(
     results = []
     for i in range(batch_size):
         batch_outputs = [out[i : i + 1] for out in outputs]
-        if normalize:
-            result = _postprocess_depth_core(batch_outputs)
-        else:
-            result = [out.astype(np.float32) for out in batch_outputs]
-        results.append(result)
+        # the first output is the depth map, any others (e.g. a focal length) keep their values
+        depth, rest = batch_outputs[:1], batch_outputs[1:]
+        depth = _postprocess_depth_core(depth) if normalize else [depth[0].astype(np.float32)]
+        results.append(depth + [out.astype(np.float32) for out in rest])
     return results
 
 

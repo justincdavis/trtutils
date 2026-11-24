@@ -1,0 +1,27 @@
+{
+    "_defaults": {
+        "exporter": "depth_pro_2",
+        "license": "Apple Machine Learning Research Model License (non-commercial)",
+        "fov_url": "https://ml-site.cdn-apple.com/models/depth-pro-2/depthpro2-fov-ew55zg4kq7.pt"
+    },
+    "depth_pro_2_small": {
+        "name": "depth_pro_2_small",
+        "preset": "depthpro2-s",
+        "url": "https://ml-site.cdn-apple.com/models/depth-pro-2/depthpro2-s-bgcc6f8bg3.pt"
+    },
+    "depth_pro_2_base": {
+        "name": "depth_pro_2_base",
+        "preset": "depthpro2-b",
+        "url": "https://ml-site.cdn-apple.com/models/depth-pro-2/depthpro2-b-xb7m9egktw.pt"
+    },
+    "depth_pro_2_large": {
+        "name": "depth_pro_2_large",
+        "preset": "depthpro2-l",
+        "url": "https://ml-site.cdn-apple.com/models/depth-pro-2/depthpro2-l-tegstu7fim.pt"
+    },
+    "depth_pro_2_huge": {
+        "name": "depth_pro_2_huge",
+        "preset": "depthpro2-h",
+        "url": "https://ml-site.cdn-apple.com/models/depth-pro-2/depthpro2-h-eivtm5w7m5.pt"
+    }
+}

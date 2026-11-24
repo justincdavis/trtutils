@@ -11,6 +11,7 @@ from ._depth_anything import (
     export_depth_anything_v2,
     export_depth_anything_v3,
 )
+from ._depth_pro import export_depth_pro_2
 from ._dfine import export_dfine
 from ._hands23 import export_hands23
 from ._hoi_detr import export_hoi_detr
@@ -66,6 +67,7 @@ EXPORTERS: dict[str, Exporter] = {
     "depth_anything_v1": Exporter(export_depth_anything_v1),
     "depth_anything_v2": Exporter(export_depth_anything_v2),
     "depth_anything_v3": Exporter(export_depth_anything_v3),
+    "depth_pro_2": Exporter(export_depth_pro_2, hw=True),
     "dfine": Exporter(export_dfine),
     "hands23": Exporter(export_hands23),
     "hoi_detr": Exporter(export_hoi_detr),
@@ -93,6 +95,7 @@ __all__ = [
     "export_depth_anything_v1",
     "export_depth_anything_v2",
     "export_depth_anything_v3",
+    "export_depth_pro_2",
     "export_dfine",
     "export_hands23",
     "export_hoi_detr",

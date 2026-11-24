@@ -445,6 +445,25 @@ def test_postprocess_depth_unnormalized_keeps_values(dtype) -> None:
         assert not np.shares_memory(result[0], out)
 
 
+@pytest.mark.parametrize("normalize", [pytest.param(True, id="norm"), pytest.param(False, id="raw")])
+def test_postprocess_depth_extra_outputs_keep_values(normalize) -> None:
+    """Only the depth map (first output) is normalized; a focal length output keeps its pixels."""
+    rng = np.random.default_rng(6)
+    depth = (rng.random((2, 1, 8, 8)) * 80 + 1).astype(np.float32)
+    focal = np.array([[900.0], [1200.0]], dtype=np.float16)
+    results = postprocess_depth([depth, focal], normalize=normalize)
+    assert len(results) == 2
+    for i, (depth_map, focal_length) in enumerate(results):
+        image = depth[i : i + 1, 0]
+        if normalize:
+            expected = (image - image.min()) / (image.max() - image.min() + 1e-8)
+        else:
+            expected = image
+        np.testing.assert_allclose(depth_map, expected, rtol=1e-6)
+        assert focal_length.dtype == np.float32
+        np.testing.assert_array_equal(focal_length, focal[i : i + 1].astype(np.float32))
+
+
 @pytest.mark.parametrize("conf_thres", [None, 0.0, 0.5, 1.1])
 def test_get_detections_core_matches_scalar_loop(conf_thres) -> None:
     """The vectorized conversion equals per-element int()/float() casts, negatives included."""

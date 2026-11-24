@@ -11,10 +11,12 @@ from ._depth_anything import (
     DepthAnythingV2Metric,
     DepthAnythingV3,
 )
+from ._depth_pro import DepthPro2
 
 __all__ = [
     "DepthAnythingV1",
     "DepthAnythingV2",
     "DepthAnythingV2Metric",
     "DepthAnythingV3",
+    "DepthPro2",
 ]
