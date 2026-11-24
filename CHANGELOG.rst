@@ -253,6 +253,11 @@ Fixed
 * ``RFDETR.build()`` FP16 engines detect again on TensorRT 8.6 (Jetson). The transformer
   LayerNorms now build in FP32; before, rfdetr_s and rfdetr_m found nothing and rfdetr_n only
   low-confidence noise. The rest of the model stays FP16, about 2x faster than an FP32 build
+* ``DEIM``, ``DEIMv2`` and ``DFINE`` ``build()`` FP16 engines detect again on TensorRT 8.6
+  (Jetson). The decoder now builds in FP32 there; before, deimv2_n, deimv2_s, deim_dfine_s,
+  deim_rtdetrv2_r18 and dfine_s found none of the onnxruntime detections and the n models only
+  a few. The backbone and encoder stay FP16. TensorRT 10 builds are unchanged. The fix also
+  covers ``RTDETRv4``, whose FP16 rtdetrv4_s engine found nothing there
 * ``run(..., preprocessed=True)`` on a batch tensor of N>1 images returns all N results instead of
   only the first
 * CPU ``linear`` resize (and ``cpu_resize=True``) returns (width, height) ratios. They were

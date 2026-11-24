@@ -10,6 +10,7 @@ from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
 from trtutils.models._hooks import (
     depthwise_fp32_build_hook,
+    dfine_decoder_fp32_build_hook,
     gridsample_debug_build_hook,
     rtdetr_build_hook,
 )
@@ -249,6 +250,8 @@ class RTDETRv4(Detector, Model):
     _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [
         gridsample_debug_build_hook,
         depthwise_fp32_build_hook,
+        # tensorrt 8.6 fp16 engines lose the detections, see the hook docstring
+        dfine_decoder_fp32_build_hook,
     ]
     _input_tensors: ClassVar[list[tuple[str, str]]] = [
         ("images", "image"),
